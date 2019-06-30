@@ -7,6 +7,7 @@
 - Activity的启动流程
 - 事件传递与滑动冲突
 - 动态高斯模糊的实现
+- [AIDL实现跨进程通信](./Android/aidl.md)
 
 ## Java
 
