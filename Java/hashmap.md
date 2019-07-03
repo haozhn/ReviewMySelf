@@ -1,13 +1,23 @@
 # HashMap源码解析
 
-## HashMap中的静态变量
+HashMap又称为散列表，是我们日常工作中使用最频繁的一个数据结构之一。它可以通过一个映射函数把key值经过计算直接映射到value的位置。
+最简单的映射函数就是取余。假定表的大小为M，那任意数N放入M中的方法就是把N放到N % M的位置处，这样我们想要N的值的时候只要直接去N % M处去取就好了。当然上面的例子我们忽略了冲突情况，就像N % M和(N + M) % M会被映射到同一个位置，这就叫哈希冲突。映射函数和冲突处理是衡量一个散列表性能的最基本条件。
+接下来我们就来看一下JDK中关于HashMap的实现
+
+## HashMap中常量
 
 - DEFAULT_INITIAL_CAPACITY：默认容量大小，值为16
-- MAXIMUM_CAPACITY：
-- DEFAULT_LOAD_FACTOR：
-- TREEIFY_THRESHOLD：
-- UNTREEIFY_THRESHOLD
-- MIN_TREEIFY_CAPACITY
+- MAXIMUM_CAPACITY：最大容量，值为1073741824
+- DEFAULT_LOAD_FACTOR：默认负载因子，值为0.75
+- TREEIFY_THRESHOLD：链表转成红黑树的阈值，值为8
+- UNTREEIFY_THRESHOLD：红黑树转成链表的阈值，值为6
+- MIN_TREEIFY_CAPACITY：这个值和TREEIFY_THRESHOLD是相关的，链表转成数需要两个条件，第一个是链表长度大于等于TREEIFY_THRESHOLD(8),第二个就是HashMap总容量要大于4 * TREEIFY_THRESHOLD
+  
+## HashMap中的变量
+
+- table: 保存数据的数组，所有的put都会对应到table的一个下标
+- size: HashMap的大小
+- threshold和loadFactor：这两个是相互关联的，这里还需要一个capacity字段，这三个的关系是threshould = capacity * loadFactor。注意capacity和上面的size的区别，capacity是表示table的大小，size表示HashMap的大小。loadFactor叫做负载因子，默认情况下是0.75,threshould不知道翻译成什么，暂且称为阈值吧。假设没有冲突的情况下，当size超过阈值时，表示table已经有75%的位置被占用了，之后发生冲突的概率很大，所以就会触发扩容操作，增大table大小，减少冲突概率。
 
 ## HashMap的创建
 
@@ -286,17 +296,22 @@ resize流程可以拆成两个子流程，第一个是对数组的扩容，第�
         int oldCap = (oldTab == null) ? 0 : oldTab.length;
         int oldThr = threshold;
         int newCap, newThr = 0;
+        // 扩容
         if (oldCap > 0) {
+            // 超出或等于最大容量就不再扩容了
             if (oldCap >= MAXIMUM_CAPACITY) {
                 threshold = Integer.MAX_VALUE;
                 return oldTab;
             }
+            // 小于最大容量时，容量翻倍
             else if ((newCap = oldCap << 1) < MAXIMUM_CAPACITY &&
                      oldCap >= DEFAULT_INITIAL_CAPACITY)
                 newThr = oldThr << 1; // double threshold
         }
+        // 调用带初始容量构造函数
         else if (oldThr > 0) // initial capacity was placed in threshold
             newCap = oldThr;
+        // 调用无参构造函数
         else {               // zero initial threshold signifies using defaults
             newCap = DEFAULT_INITIAL_CAPACITY;
             newThr = (int)(DEFAULT_LOAD_FACTOR * DEFAULT_INITIAL_CAPACITY);
@@ -311,3 +326,77 @@ resize流程可以拆成两个子流程，第一个是对数组的扩容，第�
             Node<K,V>[] newTab = (Node<K,V>[])new Node[newCap];
         table = newTab;
 ```
+
+这里分三种情况
+
+- 如果调用了无参构造函数，新容量newCap和newThr都是取默认值，分别是16和12
+- 如果调用了带初始容量的构造函数，newCap=tableSizeFor(initialCapacity),newThr=newCap*loadFactor
+- 如果table数组已经初始化过了，就判断之前的oldCap是否大于最大值，大于最大值就不再扩容了，否则newCap=oldCap*2
+
+扩容完成后还需要把老的数组中的数据映射过来
+
+```java
+        if (oldTab != null) {
+            for (int j = 0; j < oldCap; ++j) {
+                Node<K,V> e;
+                if ((e = oldTab[j]) != null) {
+                    oldTab[j] = null;
+                    // 只有一个节点就直接映射
+                    if (e.next == null)
+                        newTab[e.hash & (newCap - 1)] = e;
+                    // 红黑树
+                    else if (e instanceof TreeNode)
+                        ((TreeNode<K,V>)e).split(this, newTab, j, oldCap);
+                    // 链表
+                    else { // preserve order
+                        Node<K,V> loHead = null, loTail = null;
+                        Node<K,V> hiHead = null, hiTail = null;
+                        Node<K,V> next;
+                        do {
+                            next = e.next;
+                            // 新增的那一位是0
+                            if ((e.hash & oldCap) == 0) {
+                                if (loTail == null)
+                                    loHead = e;
+                                else
+                                    loTail.next = e;
+                                loTail = e;
+                            }
+                            // 新增的那一位是1
+                            else {
+                                if (hiTail == null)
+                                    hiHead = e;
+                                else
+                                    hiTail.next = e;
+                                hiTail = e;
+                            }
+                        } while ((e = next) != null);
+                        // 保持原位
+                        if (loTail != null) {
+                            loTail.next = null;
+                            newTab[j] = loHead;
+                        }
+                        // 移到原位 + oldCap处
+                        if (hiTail != null) {
+                            hiTail.next = null;
+                            newTab[j + oldCap] = hiHead;
+                        }
+                    }
+                }
+            }
+        }
+```
+
+在分析映射源码之前我们还需要搞清楚一个问题，那就是一个节点在老的数据中的index和在的新的数据中的index有什么区别？即(oldCap - 1) & hash和(newCap - 1) & hash这两个值之间的关系。我们在之前讲过(oldCap - 1) & hash实际上就是hash值的前log(oldCap)位，而newCap = oldCap * 2，所以(newCap - 1) & hash表示的是hash值的前log(oldCap) + 1位。由此我们得出newIndex的值可以分两种情况
+
+- 新增的那一位是0，则newIndex = oldIndex
+- 新增的那一位是1，则newIndex = oldIndex + oldCap
+
+HashMap每个位置相当于一个桶，桶里可能有一个元素，也可能多个。桶的结构为链表的我们称为链表桶，桶的结构为红黑树的我们称之为红黑树桶，下面我们可以看下这个映射过程
+
+1. 循环遍历老的数组，判断当前桶里的元素个数，如果桶里元素只有一个，直接映射到新数组的对应位置就可以了。
+2. 如果桶里元素大于1个且是链表桶，新建两个链表low和high。
+3. 如果新增的那一位是0，表示要保持原位，放入low链表中
+4. 如果新增的那一位是1，表示需要移动到原位+oldCap位置中，放入high表中
+5. 如果是红黑树桶就调用split方法，这个方法和链表的方式一样把原来的一颗红黑树拆成两颗low和high
+6. 红黑树的拆分过程中，如果拆出来的红黑树节点个数小于等于6个，就把树改成链表形式
