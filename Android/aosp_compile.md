@@ -1,11 +1,13 @@
 # AOSP源码编译（Android 9.0）
 
-AOSP全称Android Open Source Project,是Android操作系统的源码仓库,国内的手机厂商都是在Android源码的基础上开发了国内的定制系统
+操作系统：ubuntu 18
 
-1. 安装git
+1. 安装git并配置邮箱密码
 
    ```shell
    sudo apt install git
+   git config --global user.name "John Doe"
+   git config --global user.email johndoe@example.com
    ```
 
 2. 安装Repo
@@ -49,4 +51,62 @@ AOSP全称Android Open Source Project,是Android操作系统的源码仓库,国�
 
     ```shell
     repo sync
+    ```
+
+6. 源码准备好后，就该准备编译环境了，先安装下面的包，如果编译过程中还是报错，就按照报错提示安装相应依赖
+
+   ```shell
+   sudo apt update
+   sudo apt install openjdk-8-jdk git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z-dev ccache libgl1-mesa-dev libxml2-utils xsltproc unzip
+   ```
+
+7. 在AOSP根目录，执行以下目录
+
+   ```shell
+    source build/envsetup.sh
+    make clobber
+    lunch aosp_x86-eng  // 指定编译目标的格式
+   ```
+
+   编译时间很长，可能需要几个小时，编译成功后会看到下图
+
+   ![aosp-1](assets/aosp-1.png)
+
+8. 启动模拟器
+
+   ```shell
+    source build/envsetup.sh
+    lunch 5
+    emulator
+   ```
+
+   在ubuntu18的版本通常会出现如下错误
+
+   ![aosp-2](assets/aosp-2.png)
+
+    解决办法
+
+    ```shell
+    sudo apt install qemu-kvm
+    sudo adduser <username> kvm
+    sudo chown <username> /dev/kvm
+    ```
+
+    在运行模拟器，就可以运行了
+
+    ![aosp](assets/aosp-3.png)
+
+## 导入AS
+
+1. 编译idegen
+
+   ```shell
+   source build/ensetup.sh
+   make idegen
+   ```
+
+2. 执行idegen.sh
+
+    ```shell
+    sudo development/tools/idegen/idegen.sh
     ```
